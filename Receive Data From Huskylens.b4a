@@ -1,0 +1,241 @@
+﻿Build1=Default,hk.b4a.arduino.huskylens
+File1=1.bal
+FileGroup1=Default Group
+Group=Default Group
+Library1=core
+Library2=randomaccessfile
+Library3=serial
+Library4=json
+ManifestCode='This code will be applied to the manifest file during compilation.~\n~'You do not need to modify it in most cases.~\n~'See this link for for more information: https://www.b4x.com/forum/showthread.php?p=78136~\n~AddManifestText(~\n~<uses-sdk android:minSdkVersion="10" android:targetSdkVersion="29"/>~\n~<supports-screens android:largeScreens="true" ~\n~    android:normalScreens="true" ~\n~    android:smallScreens="true" ~\n~    android:anyDensity="true"/>)~\n~SetApplicationAttribute(android:icon, "@drawable/icon")~\n~SetApplicationAttribute(android:label, "$LABEL$")~\n~'End of default text.~\n~
+Module1=AsyncStreamsJson
+Module2=svcSerialHuskylens
+NumberOfFiles=1
+NumberOfLibraries=4
+NumberOfModules=2
+Version=11.8
+@EndOfDesignText@
+#Region  Project Attributes 
+	#ApplicationLabel: Receive Data From Huskylens
+	#VersionCode: 1
+	#VersionName: 
+	'SupportedOrientations possible values: unspecified, landscape or portrait.
+	#SupportedOrientations: portrait
+	#CanInstallToExternalStorage: False
+#End Region
+
+#Region  Activity Attributes 
+	#FullScreen: False
+	#IncludeTitle: False
+#End Region
+
+Sub Process_Globals
+	'These global variables will be declared once when the application starts.
+	'These variables can be accessed from all modules.
+	Dim admin As BluetoothAdmin
+	Dim myserial As Serial
+	Dim foundDevices As List
+	Type NameAndMac (Name As String, Mac As String)
+	Dim connectedDevices As NameAndMac	
+	Dim connected As Boolean
+	' Dim ast As AsyncStreamsJson
+	Private Timer1 As Timer
+	Private mapOfObject As Map
+End Sub
+
+Sub Globals
+	'These global variables will be redeclared each time the activity is created.
+	'These variables can only be accessed from this module.
+	Private ButtonConnect As Button
+	Private ButtonDisconnect As Button
+	Private LabelData As Label
+	Private ButtonReset As Button	
+End Sub
+
+Sub Activity_Create(FirstTime As Boolean)
+	'Do not forget to load the layout file created with the visual designer. For example:
+	'Activity.LoadLayout("Layout1")
+	Activity.LoadLayout("1")
+	Activity.Title = "Receive Data From Huskylens"
+'	Timer1.Initialize("Timer1",100)
+	
+	DateTime.DateFormat = "HH:mm:ss"
+	
+	ButtonConnect.Text = "Connect"
+	ButtonDisconnect.Text = "Disconnect"
+	ButtonReset.Text = "Reset"
+	
+	ButtonConnect.Enabled = True	
+	ButtonDisconnect.Enabled = False
+	ButtonReset.Enabled = False
+	
+	If FirstTime Then
+		connected = False
+		admin.Initialize("admin")
+		myserial.Initialize("myserial")
+		mapOfObject = CreateMap( _
+			1: "Nothing", _ 
+			2: "Pork Slice", _ 
+			3: "Beef Slice", _ 
+			4: "Tenderloin", _ 
+			5: "Squid", _
+			6: "Green Shrimp", _ 
+			7: "Safflower Crab", _ 
+			8: "Bream Fish", _ 
+			9: "Lobster", _ 
+			10: "Portunus")
+	End If
+	ButtonReset_Click
+End Sub
+
+Sub Activity_Resume
+	If admin.IsEnabled = False Then
+		If admin.Enable = False Then
+			ToastMessageShow("Bluetooth is off", True)
+		Else
+			ToastMessageShow("Turn on Bluetooth ...", True)
+		End If
+	Else
+		admin_StateChanged(admin.STATE_ON,0)
+	End If
+End Sub
+
+Sub Activity_Pause (UserClosed As Boolean)
+	If UserClosed Then
+'		ast.Close
+'		serial1.Disconnect
+		If IsPaused(svcSerialHuskylens) = False Then
+			StopService(svcSerialHuskylens)
+		End If
+		Activity.Finish
+		ExitApplication
+	End If
+End Sub
+
+'*****************************************Bluetooth
+
+Sub admin_StateChanged (NewState As Int, OldState As Int)
+	
+End Sub
+
+Sub admin_DiscoveryFinished
+	ProgressDialogHide
+	If foundDevices.Size = 0 Then
+		ToastMessageShow("Bluetooth devices not found !!!"&CRLF&"Please try again !",True)
+	Else
+		Dim il As List
+		il.Initialize
+		For i=0 To foundDevices.Size-1
+			Dim nm As NameAndMac
+			nm = foundDevices.Get(i)
+			il.Add(nm.Name)
+		Next		
+		Dim res As Object = InputListAsync(il, "Take from a paired device", -1, True)
+		Wait For (res) InputList_Result(Ret2 As Int)        
+		If Ret2 <> DialogResponse.CANCEL Then
+			connectedDevices = foundDevices.Get(res)
+			ProgressDialogShow("Connect with : "&CRLF&connectedDevices.Name&CRLF&"Mac Adr("&connectedDevices.Mac)
+			' serial1.Connect(connectedDevices.Mac)
+			sendHuskylensIntent(connectedDevices.Mac)
+		End If		
+	End If
+End Sub
+
+'***************************************** serial1
+'Sub serial1_Connected (Success As Boolean)
+'	ProgressDialogHide	
+'	If Success Then
+'		ToastMessageShow("Connect successfully",True)
+'		connected = True		
+'		If ast.IsInitialized Then ast.Close
+'		ast.Initialize(Me, "ast", serial1.InputStream, serial1.OutputStream)	
+'		ButtonConnect.Enabled = False
+'		ButtonDisconnect.Enabled = True
+'		ButtonReset.Enabled = False		
+'		Timer1.Enabled = True
+'	Else
+'		connected = False
+'		ToastMessageShow("Troubled connecting ...!",True)
+'	End If
+'End Sub
+
+Sub btHuskylens_Error
+	ToastMessageShow("Network Error(Huskylens): " & LastException.Message, True)
+End Sub
+
+Sub btHuskylens_Terminated
+	ToastMessageShow("Broken Connection(Huskylens) !!!",True)
+End Sub
+
+Sub btHuskylens_NewText(id As Int)
+	If mapOfObject.ContainsKey(id) Then
+		LabelData.Text = $"Id: ${id}; Name: ${mapOfObject.Get(id)}"$
+	End If
+End Sub
+
+Sub ButtonConnect_Click
+	Dim pairedDevices As Map
+	pairedDevices = myserial.GetPairedDevices
+	Dim il As List
+	il.Initialize
+	For i=0 To pairedDevices.Size - 1
+		il.Add(pairedDevices.GetKeyAt(i))
+	Next	
+	Dim res As Object = InputListAsync(il, "Select Device", -1, True)
+	Wait For (res) InputList_Result(Ret2 As Int)        
+	If Ret2 <> DialogResponse.CANCEL Then
+		Try
+			Dim idx As Int = Ret2
+			Dim option_1 As String = il.Get(idx)
+			Log("Option: " & option_1)
+			Dim macAddr As String = pairedDevices.Get(option_1)
+			Log("Mac Addr: " & macAddr)
+			' myserial.Connect(macAddr)
+			sendHuskylensIntent(macAddr)
+		Catch
+			Log(LastException)
+		End Try		
+	End If
+End Sub
+
+Private Sub btHuskylens_Connected(isSuccess As Boolean)
+	If isSuccess Then
+		ButtonConnect.Enabled = False
+		ButtonDisconnect.Enabled = True
+		ButtonReset.Enabled = False
+		Log("Bluetooth is connected.")
+	Else
+		ToastMessageShow("Troubled connecting ...!",True)
+		Log("Bluetooth is NOT connected!")
+	End If
+End Sub
+
+Sub ButtonDisconnect_Click
+	'ast.Close
+	'serial1.Disconnect
+	If IsPaused(svcSerialHuskylens) = False Then
+		StopService(svcSerialHuskylens)
+	End If
+	connected = False
+	ButtonConnect.Enabled = True
+	ButtonDisconnect.Enabled = False
+	ButtonReset.Enabled = True
+	Timer1.Enabled = False
+End Sub
+
+Sub ButtonReset_Click
+	LabelData.Text = ""
+End Sub
+
+Sub sendHuskylensIntent(mac As String)
+	If IsPaused(svcSerialHuskylens) = False Then
+		StopService(svcSerialHuskylens)
+	End If
+	Dim inte As Intent
+	inte.Initialize("", "")
+	inte.SetComponent(Application.PackageName & "/.svcserialhuskylens")
+	' pidProduction is page id of B4XProductionPage
+	' inte.PutExtra("senderid", "pidProduction")
+	inte.PutExtra("sender", "Main")
+	inte.PutExtra("mac", mac)
+	StartService(inte)
+End Sub
